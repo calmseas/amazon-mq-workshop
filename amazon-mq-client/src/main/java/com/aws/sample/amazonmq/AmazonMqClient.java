@@ -49,7 +49,7 @@ public class AmazonMqClient {
         final long ttl = Integer.parseInt(cmd.getOptionValue("ttl", "-1"));
         String name = cmd.getOptionValue("name", UUID.randomUUID().toString());
         int deliveryMode = cmd.hasOption("notPersistent") ? DeliveryMode.NON_PERSISTENT : DeliveryMode.PERSISTENT;
-        registerShutdownHook(count, ds, interval);
+        if (cmd.getOptionValue("mode").contentEquals("receiver")) { registerShutdownHook(count, ds, interval); }
 
         try {
             String user = null;
@@ -106,14 +106,7 @@ public class AmazonMqClient {
         textMessage.setJMSMessageID(id);
         textMessage.setJMSCorrelationID(id);
         queueMessageProducer.send(textMessage, deliveryMode, 0, ttl);
-        if (interval > 0) {
-            System.out.println(String.format("%s - Sender: sent '%s'", df.format(new Date()), textMessage.getText()));
-            try {
-                Thread.sleep(interval);
-            } catch (InterruptedException e) {
-                e.printStackTrace();
-            }
-        }
+        System.exit(0);
     }
 
     private static void receiveMessages(Session session, MessageConsumer consumer) throws JMSException {
