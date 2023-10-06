@@ -17,6 +17,7 @@ import javax.jms.Session;
 import javax.jms.TextMessage;
 
 import org.apache.activemq.ActiveMQSslConnectionFactory;
+import org.apache.activemq.command.ActiveMQTextMessage;
 import org.apache.commons.cli.CommandLine;
 import org.apache.commons.cli.CommandLineParser;
 import org.apache.commons.cli.DefaultParser;
@@ -71,12 +72,14 @@ public class AmazonMqClient {
             Session session = conn.createSession(false, Session.CLIENT_ACKNOWLEDGE);
 
             if (cmd.getOptionValue("mode").contentEquals("sender")) {
+                String message = cmd.getOptionValue("message");
+
                 if (cmd.getOptionValue("type").contentEquals("queue")) {
                     MessageProducer queueMessageProducer = session.createProducer(session.createQueue(cmd.getOptionValue("destination")));
-                    sendMessages(session, queueMessageProducer, ttl, name, interval, deliveryMode, count);
+                    sendMessage(session, queueMessageProducer, ttl, interval, deliveryMode, message);
                 } else {
                     MessageProducer topicMessageProducer = session.createProducer(session.createTopic(cmd.getOptionValue("destination")));
-                    sendMessages(session, topicMessageProducer, ttl, name, interval, deliveryMode, count);
+                    sendMessage(session, topicMessageProducer, ttl, interval, deliveryMode, message);
                 }
             } else {
                 if (cmd.getOptionValue("type").contentEquals("queue")) {
@@ -93,23 +96,22 @@ public class AmazonMqClient {
         }
     }
 
-    private static void sendMessages(Session session, MessageProducer queueMessageProducer, long ttl, String name, int interval, int deliveryMode, WrapInt count) throws JMSException {
+    private static void sendMessage(Session session, MessageProducer queueMessageProducer, long ttl, int interval, int deliveryMode, String message) throws JMSException {
         String destination = queueMessageProducer.getDestination().toString();
 
-        while (true) {
-            count.v++;
-            String id = UUID.randomUUID().toString();
-            TextMessage message = session.createTextMessage(String.format("[%s] [%s] Message number %s", destination, name, count.v));
-            message.setJMSMessageID(id);
-            message.setJMSCorrelationID(id);
-            queueMessageProducer.send(message, deliveryMode, 0, ttl);
-            if (interval > 0) {
-                System.out.println(String.format("%s - Sender: sent '%s'", df.format(new Date()), message.getText()));
-                try {
-                    Thread.sleep(interval);
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
-                }
+        String id = UUID.randomUUID().toString();
+        //TextMessage textMessage = session.createTextMessage(message);
+        ActiveMQTextMessage textMessage = new ActiveMQTextMessage();
+        textMessage.setText(message);
+        textMessage.setJMSMessageID(id);
+        textMessage.setJMSCorrelationID(id);
+        queueMessageProducer.send(textMessage, deliveryMode, 0, ttl);
+        if (interval > 0) {
+            System.out.println(String.format("%s - Sender: sent '%s'", df.format(new Date()), textMessage.getText()));
+            try {
+                Thread.sleep(interval);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
             }
         }
     }
@@ -118,7 +120,10 @@ public class AmazonMqClient {
         consumer.setMessageListener(new MessageListener() {
             public void onMessage(Message message) {
                 try {
-                    if (message instanceof TextMessage) {
+                    if (message instanceof ActiveMQTextMessage) {
+                        ActiveMQTextMessage msg = (ActiveMQTextMessage) message;
+                        System.out.println(String.format("%s - Receiver: received '%s'", df.format(new Date()), msg.getText()));
+                    } else if (message instanceof TextMessage) {
                         TextMessage msg = (TextMessage) message;
                         System.out.println(String.format("%s - Receiver: received '%s'", df.format(new Date()), msg.getText()));
                     } else if (message instanceof BytesMessage) {
@@ -149,6 +154,7 @@ public class AmazonMqClient {
         options.addOption("interval", true, "The interval in msec at which messages are generated. Default 1000");
         options.addOption("notPersistent", false, "Send messages in non-persistent mode");
         options.addOption("ttl", true, "The time to live value for the message.");
+        options.addOption("message", true, "The message to send");
         CommandLineParser parser = new DefaultParser();
         CommandLine cmd = parser.parse(options, args);
 
